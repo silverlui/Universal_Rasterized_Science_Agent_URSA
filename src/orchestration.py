@@ -14,7 +14,7 @@ from schemas import *
 
 sys.path.append(
     os.path.abspath("../utilities"))  # Add "utilities" dir to the search path
-from stream_formatter import format_stream
+from message_formatter import format_msg
 
 # Langgraph/Langchain
 from langgraph.graph import StateGraph, START, END
@@ -29,10 +29,11 @@ from typing import Literal, List
 
 load_dotenv()  # Load environment variables
 
+
 # ++++++++++ Graph setup ++++++++++
 # Nodes (Some of the node code inspired by):
 # https://github.com/langchain-ai/how_to_fix_your_context/blob/main/notebooks/01-rag.ipynb)
-def user_input(state: AgentState) -> dict[str, List[BaseMessage]]:
+def user_input(state: AgentState) -> dict[str, List[HumanMessage]]:
     """
     Append user prompt to state
     """
@@ -70,7 +71,7 @@ llm = ChatGoogleGenerativeAI(model="gemini-2.5-pro", temperature=0,
 
 
 # Main llm invocation
-def llm_call(state: AgentState) -> dict[str, List[BaseMessage]]:
+def llm_call(state: AgentState) -> dict[str, List[AIMessage]]:
     """
     LLM decides whether to call a tool or not.
     """
@@ -82,15 +83,16 @@ def llm_call(state: AgentState) -> dict[str, List[BaseMessage]]:
 # llm to tool node routing function
 def tool_router(state: AgentState) -> Literal["pending tool calls", "done"]:
     """
-    Decide if we should continue the tool loop or stop based on whether
-    the LLM made a tool call.
+    Decide if we should continue the tool loop or return to the user based on
+    the last message.
     """
     last_message = state.messages[-1]
 
-    # If the LLM makes a tool call, then perform an action
+    # Continue tool loop
     if last_message.tool_calls:
         return "pending tool calls"
-    # Otherwise, we stop (return to llm_call)
+
+    # No tools are called -> return to user node
     return "done"
 
 
@@ -128,17 +130,19 @@ app = graph.compile()
 # ++++++++++ Initializing Agent ++++++++++
 
 # Initialize state variables
-essential_context = """
+essential_context = """*ALWAYS RETURN A NATURAL LANGUAGE MESSAGE WHEN 
+INVOKED, EVEN WHEN MAKING TOOL CALLS, EXPLAIN YOUR THOUGHT PROCESS* 
+
 You are a helpful assistant tasked with retrieving and interpreting information 
 from a South Florida hydrological model known as:
 Biscayne and Southern Everglades Coastal Transport Model (BISECT).
  
-Technical details about the model are recorded in the paper:
+Details about the model are recorded in the paper:
 "The Hydrologic System of the South Florida Peninsula: 
 Development and Application of the Biscayne and Southern 
 Everglades Coastal Transport (BISECT) Model"
 
- Authored by:
+Authored by:
 *Eric D. Swain, Melinda A. Lohmann, and Carl R. Goodwin*.
 
 Your goal is to make this invaluable knowledge accessible 
@@ -160,6 +164,21 @@ context to answer the user's research request.
 You can also extract a subset of the raster data using the GIS tool suite 
 provided too you for your own reference during the course of conversation. 
 Follow argument schemas *EXACTLY*. 
+
+*DON'T MAKE ASSUMPTIONS ABOUT THE STRUCTURE OF THE DATASET*
+*ALWAYS MANUALLY CHECK METADATA*
+
+You are a data interface. You are *FORBIDDEN* from providing numerical data (
+salinity, means, ranges) unless you have successfully received a ToolMessage 
+containing that specific data in the current conversation turn. 
+
+Nan values indicate a near zero salinity measurement typically indicating the
+presence of a landmass.
+
+Units are missing from your dataset metadata. They have been converted from the
+original PSU units of the model into grams per liter. 
+
+*REMEMBER: THE UNITS ARE GRAMS PER LITER*
 
 The updated data after each operation is preserved in your state, so if you 
 need to perform a multistep operation you can.
@@ -185,19 +204,22 @@ inputs = {"messages": [starting_prompt],
 # Initialize token counter
 total_tokens = 0
 
-# Running graph
-for s in app.stream(inputs, stream_mode="values"):
-    # Get last message
-    message = s["messages"][-1]
+# Streaming agent
+# ('updates' mode yields the state updates after each node execution)
+for update in app.stream(inputs, stream_mode="updates"):
 
-    # Display message
-    print(format_stream(message))
+    for node_name, state_update in update.items():
+        if "messages" in state_update:
+            new_msgs = state_update["messages"]
 
-    # Collect token use information from llm
-    if message.type == "ai" and hasattr(message,
-                                        "usage_metadata") and message.usage_metadata:
-        metadata = message.usage_metadata
-        total_tokens += metadata.get("total_tokens", 0)
+            for msg in new_msgs:
+                print(format_msg(msg))
+
+                # Count tokens
+                if isinstance(msg, AIMessage) and getattr(msg,
+                                                          "usage_metadata",
+                                                          None):
+                    total_tokens += msg.usage_metadata.get("total_tokens", 0)
 
 # Show the conversation's cumulative token use at the end
 token_string = f"|Token consumption: {total_tokens}|"

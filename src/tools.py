@@ -142,8 +142,8 @@ class SpatialTemporalSelectSchema(BaseModel):
         Dimension, Union[float, str, List[Union[float, str]]]] = Field(
         ...,
         description="Coordinate constraints. Use [min, max] for a range or a "
-                    "single value. Supports numbers for spatial (x, y) and "
-                    "strings for time.",
+                    "single value. Takes spatial (x, y) and calendar dates "
+                    "for time.",
         example={"x": [580000, 585000], "time": "2026-01-01"}
     )
 
@@ -370,7 +370,6 @@ def ursa_tool_node(state: AgentState) -> Dict[str, Any]:
     current_ds = state.active_selection
     argument_map = {
         "dataset": state.dataset,
-        "active_selection": state.active_selection
     }
 
     for tool_call in last_message.tool_calls:
