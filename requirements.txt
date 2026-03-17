@@ -25,5 +25,9 @@ pyproj
 # Google Gemini Integration
 langchain_google_genai
 
+# Flask server
+flask
+flask_cors
+
 # Environment Variables Access
 python_dotenv
