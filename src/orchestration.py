@@ -35,6 +35,7 @@ load_dotenv()  # Load environment variables
 # ++++++++++ Graph setup ++++++++++
 # Nodes (Some of the node code inspired by):
 # https://github.com/langchain-ai/how_to_fix_your_context/blob/main/notebooks/01-rag.ipynb)
+
 def user_input(state: AgentState) -> dict[str, List[HumanMessage]]:
     """
     Append user prompt to state
@@ -100,22 +101,57 @@ def tool_router(state: AgentState) -> Literal["pending tool calls", "done"]:
 
 graph = StateGraph(AgentState)
 
-graph.add_node("tool node", ursa_tool_node)
-graph.add_node("llm call", llm_call)
+# Debug mode graph
+if __name__ == "__main__":
 
-# Edges
-graph.add_edge(START, "llm call")
+    # Nodes
+    graph.add_node("user input", user_input)
+    graph.add_node("tool node", ursa_tool_node)
+    graph.add_node("llm call", llm_call)
 
-graph.add_conditional_edges(
-    "llm call",
-    tool_router,
-    {
-        "pending tool calls": "tool node",
-        "done": END
-    }
-)
+    # Edges
+    graph.add_edge(START, "user input")
 
-graph.add_edge("tool node", "llm call")
+    graph.add_conditional_edges(
+        "user input",
+        end_session_router,
+        {
+            "session ended": END,
+            "request created": "llm call"
+        }
+    )
+
+    graph.add_conditional_edges(
+        "llm call",
+        tool_router,
+        {
+            "pending tool calls": "tool node",
+            "done": "user input"
+        }
+    )
+
+    graph.add_edge("tool node", "llm call")
+
+# Flask server graph
+else:
+
+    # Nodes
+    graph.add_node("llm call", llm_call)
+    graph.add_node("tool node", ursa_tool_node)
+
+    # Edges
+    graph.add_edge(START, "llm call")
+
+    graph.add_conditional_edges(
+        "llm call",
+        tool_router,
+        {
+            "pending tool calls": "tool node",
+            "done": END
+        }
+    )
+
+    graph.add_edge("tool node", "llm call")
 
 app = graph.compile()
 
@@ -202,6 +238,41 @@ TOOL USE RULES — follow these strictly:
 
 DS = xr.open_dataset(os.getenv("NETCDF_DATA_PATH"))
 
+# ++++++++++ Console Debug Mode ++++++++++
+if __name__ == "__main__":
+
+    # Initialize state
+    inputs = {"messages": [SystemMessage(content=essential_context)],
+              "dataset": DS
+              }
+
+    # Initialize token counter
+    total_tokens = 0
+
+    # Streaming agent
+    # ('updates' mode yields the state updates after each node execution)
+    for update in app.stream(inputs, stream_mode="updates"):
+
+        for node_name, state_update in update.items():
+            if "messages" in state_update:
+                new_msgs = state_update["messages"]
+
+                for msg in new_msgs:
+                    print(format_msg(msg))
+
+                    # Count tokens
+                    if isinstance(msg, AIMessage) and getattr(msg,
+                                                              "usage_metadata",
+                                                              None):
+                        total_tokens += msg.usage_metadata.get("total_tokens",
+                                                               0)
+
+    # Show the conversation's cumulative token use at the end
+    token_string = f"|Token consumption: {total_tokens}|"
+    bars = '-' * len(token_string)
+    print(bars)
+    print(token_string)
+    print(bars)
 
 # ++++++++++ Flask Interface ++++++++++
 
@@ -291,30 +362,3 @@ def run_agent(user_message: str, history: list = None) -> dict:
         "labels": labels,
         "data": data
     }
-
-
-# ++++++++++ Console Runner ++++++++++
-
-if __name__ == "__main__":
-    starting_prompt = SystemMessage(content=essential_context)
-
-    inputs = {"messages": [starting_prompt],
-              "dataset": DS
-              }
-
-    total_tokens = 0
-
-    for s in app.stream(inputs, stream_mode="values"):
-        message = s["messages"][-1]
-        print(format_stream(message))
-
-        if message.type == "ai" and hasattr(message,
-                                            "usage_metadata") and message.usage_metadata:
-            metadata = message.usage_metadata
-            total_tokens += metadata.get("total_tokens", 0)
-
-    token_string = f"|Token consumption: {total_tokens}|"
-    bars = '-' * len(token_string)
-    print(bars)
-    print(token_string)
-    print(bars)
