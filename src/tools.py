@@ -143,8 +143,7 @@ def inspect_selection(
         current_ds: Annotated[Optional[xr.Dataset], InjectedState]
 ) -> str:
     """
-    Statistical summary of the active_slice.
-    Global filters are assumed to handle DOF/NaN warnings.
+    Statistical and geospatial summary of the active_selection.
     """
     ds = current_ds
     if ds is None:
