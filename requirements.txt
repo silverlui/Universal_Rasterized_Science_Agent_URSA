@@ -17,6 +17,7 @@ netcdf4
 dask
 pandas
 numpy
+matplotlib
 
 # Mapping and Geospatial
 geopy
