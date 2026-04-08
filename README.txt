@@ -14,3 +14,26 @@ Institution:
 U.A. Whitaker College of Engineering, Florida Gulf Coast University
 The Water School, Florida Gulf Coast University
 DENDRITIC A Human-Centered Artificial Intelligence and Data Science Institute, Florida Gulf Coast University
+
+Setup:
+1. Create a virtual environment:
+   python -m venv venv
+
+2. Activate the virtual environment:
+   - macOS/Linux: source venv/bin/activate
+   - Windows:     venv\Scripts\activate
+
+3. Install dependencies:
+   pip install -r requirements.txt
+
+4. Create a .env file in the project root with the following variables:
+   GOOGLE_API_KEY=your_google_api_key
+   GOOGLE_MAPS_API_KEY=your_google_maps_api_key
+   NETCDF_DATA_PATH=/path/to/your/netcdf_file.nc
+   CHROMADB_PATH=/path/to/your/vector_database
+   PDF_PATH=/path/to/your/bisect_paper.pdf
+
+Running the App:
+   python app.py
+
+   The server will start on http://localhost:5001
